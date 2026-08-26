@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, CalendarDays, RefreshCw, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
-import { buildUserActivity, dailyActiveUsers, fetchLoginEvents, type UserActivity } from './services/dynatraceUserAdoption';
+import { buildUserActivity, dailyActiveUsers, diagnoseAuditEventTypes, fetchLoginEvents, type UserActivity } from './services/dynatraceUserAdoption';
 
 type Range = 7 | 15 | 30;
 
@@ -10,24 +10,28 @@ export default function App() {
   const [daily, setDaily] = useState<{ date: string; users: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [diagnostic, setDiagnostic] = useState('');
 
   const load = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setDiagnostic('');
     try {
       const events = await fetchLoginEvents(range);
       setUsers(buildUserActivity(events));
       setDaily(dailyActiveUsers(events));
+      if (!events.length) {
+        const types = await diagnoseAuditEventTypes();
+        setDiagnostic(types.length ? `No LOGIN records returned. Audit event types seen in the last 7 days: ${types.join(', ')}.` : 'No audit events were returned in the last 7 days.');
+      }
     } catch (e) {
       console.error(e);
       setUsers([]); setDaily([]);
-      setError('Live login data could not be loaded. Verify Grail audit-event access and the dt.system.events schema in the Axis tenant.');
+      setError('Live audit data could not be loaded. Check the app permissions for storage:system:read and storage:buckets:read, then verify dt.system.events access in the Axis tenant.');
     } finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, [range]);
 
-  const active = users.length;
-  const adoption = users.length ? 100 : 0;
+  const uniqueUsers = users.length;
   const latestDaily = daily.at(-1)?.users ?? 0;
   const totalLogins = users.reduce((sum, u) => sum + u.logins, 0);
   const topUsers = useMemo(() => users.slice(0, 100), [users]);
@@ -39,20 +43,21 @@ export default function App() {
     </header>
     <div className="status"><span><i/> {loading ? 'Querying Grail…' : 'Live Dynatrace data'}</span><span><CalendarDays size={13}/> Last {range} days</span><span>{totalLogins.toLocaleString()} login events</span></div>
     {error && <div className="error"><b>Live data unavailable</b><span>{error}</span></div>}
+    {diagnostic && !error && <div className="diagnostic"><b>Data diagnostic</b><span>{diagnostic}</span></div>}
 
     <section className="cards">
-      <Card icon={<Users/>} label="Unique Active Users" value={active} hint="Users with login activity"/>
-      <Card icon={<UserCheck/>} label="Adoption Rate" value={`${adoption}%`} hint={`Within ${range}-day window`}/>
-      <Card icon={<UserX/>} label="Inactive Users" value={0} hint="Phase 1 defines active by window"/>
-      <Card icon={<Activity/>} label="Latest Daily Active" value={latestDaily} hint="Most recent activity day"/>
+      <Card icon={<Users/>} label="Unique Active Users" value={uniqueUsers} hint="Users with LOGIN activity"/>
+      <Card icon={<UserCheck/>} label="Login Events" value={totalLogins} hint={`Successful LOGIN records in ${range} days`}/>
+      <Card icon={<UserX/>} label="Inactive Users" value="—" hint="Requires full IAM user population"/>
+      <Card icon={<Activity/>} label="Latest Daily Active" value={latestDaily} hint="Unique users on latest activity day"/>
     </section>
 
     <section className="grid">
       <div className="panel"><div className="panelHead"><div><h2>Daily Active Users</h2><p>Unique users with a LOGIN audit event per day.</p></div><span>{daily.length} active days</span></div><div className="chart">{daily.map((d) => <div className="bar" key={d.date} title={`${d.date}: ${d.users}`}><b style={{height:`${Math.max(8, latestDaily ? d.users/latestDaily*100 : 8)}%`}}/><small>{d.date.slice(5)}</small></div>)}{!daily.length && <div className="empty">No daily login activity returned.</div>}</div></div>
-      <div className="panel"><div className="panelHead"><div><h2>Adoption Health</h2><p>Live query state</p></div></div><div className="health"><div className="ring"><b>{adoption}%</b><span>ADOPTION</span></div><div><strong>{active}</strong><small>active users</small><strong>{totalLogins}</strong><small>login events</small></div></div><div className="callout"><ShieldCheck size={15}/><span>Phase 1 live Grail provider connected.</span></div></div>
+      <div className="panel"><div className="panelHead"><div><h2>Activity Health</h2><p>Phase 1 live audit activity</p></div></div><div className="health"><div className="ring"><b>{uniqueUsers}</b><span>USERS</span></div><div><strong>{uniqueUsers}</strong><small>unique users</small><strong>{totalLogins}</strong><small>login events</small></div></div><div className="callout"><ShieldCheck size={15}/><span>Grail audit provider connected. IAM population and Management Zone enrichment are next.</span></div></div>
     </section>
 
-    <section className="panel"><div className="panelHead"><div><h2>User Activity</h2><p>Real audit/login records. Management Zone enrichment is Phase 2.</p></div><span>{topUsers.length} users</span></div><div className="table"><div className="thead"><span>USER</span><span>MANAGEMENT ZONE</span><span>LAST LOGIN</span><span>ACTIVE DAYS</span><span>LOGINS</span><span>STATUS</span></div>{topUsers.map((u) => <div className="tr" key={u.userId}><strong>{u.userName}</strong><span>{u.managementZone}</span><span>{u.lastLogin || '—'}</span><span>{u.activeDays}</span><span>{u.logins}</span><em>Active</em></div>)}{!loading && !topUsers.length && <div className="empty">No users returned.</div>}</div></section>
+    <section className="panel"><div className="panelHead"><div><h2>User Activity</h2><p>Real audit/login records. Management Zone enrichment is Phase 2.</p></div><span>{topUsers.length} users</span></div><div className="table"><div className="thead"><span>USER</span><span>MANAGEMENT ZONE</span><span>LAST LOGIN</span><span>ACTIVE DAYS</span><span>LOGINS</span><span>STATUS</span></div>{topUsers.map((u) => <div className="tr" key={u.userId}><strong>{u.userName}</strong><span>{u.managementZone}</span><span>{u.lastLogin || '—'}</span><span>{u.activeDays}</span><span>{u.logins}</span><em>Active in window</em></div>)}{!loading && !topUsers.length && <div className="empty">No users returned.</div>}</div></section>
     <footer>Dynatrace User Adoption · Phase 1 · Standalone AppEngine application</footer>
   </main>;
 }
