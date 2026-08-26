@@ -1,0 +1,7 @@
+{
+  "generatedFrom": "userlistbyservices_with_dynatrace_mz_appname (1).xlsx",
+  "uniqueAssignments": 3440,
+  "uniqueUsers": 1931,
+  "note": "Privacy-safe reference dataset. User IDs are SHA-256 hashed; raw LDAP/user data is not stored.",
+  "assignments": {}
+}
