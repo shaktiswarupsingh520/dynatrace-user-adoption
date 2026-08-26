@@ -1,0 +1,1 @@
+Place the generated user-mz-master.json in this directory before building/deploying. The repository intentionally does not store raw user/LDAP data. Generate the privacy-safe hashed reference file from your source workbook using the local helper described in README.md.
