@@ -1,4 +1,5 @@
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+import referenceData from '../data/user-mz-master.json';
 
 export type UserAssignment = { mz: string; app: string; code: string };
 export type UserActivity = { userId: string; userName: string; assignments: UserAssignment[]; lastLogin: string; activeDays: number; logins: number; status: 'Active' | 'Inactive' };
@@ -7,10 +8,8 @@ export type MzSummary = { mz: string; apps: string[]; total: number; active: num
 type ReferencePayload = { assignments: Record<string, [string, string, string][]> };
 const str = (v: unknown) => v == null ? '' : String(v);
 
-export async function loadReference(): Promise<Map<string, UserAssignment[]>> {
-  const response = await fetch('/data/user-mz-master.json', { cache: 'no-store' });
-  if (!response.ok) throw new Error('Reference dataset not found. Copy user-mz-master.json into public/data before deployment.');
-  const payload = await response.json() as ReferencePayload;
+export function loadReference(): Map<string, UserAssignment[]> {
+  const payload = referenceData as ReferencePayload;
   return new Map(Object.entries(payload.assignments).map(([hash, values]) => [hash, values.map(([mz, app, code]) => ({ mz, app, code }))]));
 }
 
