@@ -1,8 +1,11 @@
 node_modules/
 dist/
 out/
+.dt-app/
 .env
 .env.*
 !.env.example
 npm-debug.log*
 .DS_Store
+data/user-mz-master.json
+data/user-mz-master-hashed.json
