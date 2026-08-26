@@ -1,30 +1,29 @@
 {
   "name": "dynatrace-user-adoption",
-  "version": "1.0.0",
   "private": true,
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "dt:analyze": "dt-app analyze",
-    "dt:build": "dt-app build",
-    "dt:deploy": "dt-app deploy",
-    "dt:dry-run": "dt-app deploy --dry-run"
+    "dt:analyze": "npx dt-app analyze",
+    "dt:build": "npx dt-app build",
+    "dt:deploy": "npx dt-app deploy",
+    "dt:dry-run": "npx dt-app deploy --dry-run"
   },
   "dependencies": {
-    "@dynatrace-sdk/app-environment": "^1.7.0",
-    "@dynatrace-sdk/client-query": "^1.7.0",
-    "@dynatrace-sdk/react-hooks": "^1.17.0",
-    "lucide-react": "^0.468.0",
+    "@dynatrace-sdk/app-environment": "^1.1.4",
+    "@dynatrace-sdk/client-query": "^1.26.0",
+    "lucide-react": "^0.446.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.2"
   }
 }
