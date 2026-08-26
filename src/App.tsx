@@ -1,64 +1,81 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, CalendarDays, RefreshCw, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
-import { buildUserActivity, dailyActiveUsers, diagnoseAuditEventTypes, fetchLoginEvents, type UserActivity } from './services/dynatraceUserAdoption';
+import { Activity, CalendarDays, ChevronRight, RefreshCw, ShieldCheck, UserCheck, UserX, Users, X } from 'lucide-react';
+import { fetchAdoption, fetchUserDailyActivity, loadReference, summarizeByMz, type MzSummary, type UserActivity } from './services/adoptionEngine';
 
 type Range = 7 | 15 | 30;
 
 export default function App() {
-  const [range, setRange] = useState<Range>(7);
+  const [range, setRange] = useState<Range>(30);
   const [users, setUsers] = useState<UserActivity[]>([]);
-  const [daily, setDaily] = useState<{ date: string; users: number }[]>([]);
+  const [zones, setZones] = useState<MzSummary[]>([]);
+  const [selectedMz, setSelectedMz] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserActivity | null>(null);
+  const [daily, setDaily] = useState<{ day: string; logins: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [diagnostic, setDiagnostic] = useState('');
+  const [refCount, setRefCount] = useState(0);
 
   const load = async () => {
-    setLoading(true); setError(''); setDiagnostic('');
+    setLoading(true); setError('');
     try {
-      const events = await fetchLoginEvents(range);
-      setUsers(buildUserActivity(events));
-      setDaily(dailyActiveUsers(events));
-      if (!events.length) {
-        const types = await diagnoseAuditEventTypes();
-        setDiagnostic(types.length ? `No LOGIN records returned. Audit event types seen in the last 7 days: ${types.join(', ')}.` : 'No audit events were returned in the last 7 days.');
-      }
+      const reference = await loadReference();
+      setRefCount(reference.size);
+      const activity = await fetchAdoption(range, reference);
+      setUsers(activity);
+      setZones(summarizeByMz(activity));
     } catch (e) {
       console.error(e);
-      setUsers([]); setDaily([]);
-      setError('Live audit data could not be loaded. Check the app permissions for storage:system:read and storage:buckets:read, then verify dt.system.events access in the Axis tenant.');
+      setError(e instanceof Error ? e.message : 'Adoption data could not be loaded.');
+      setUsers([]); setZones([]);
     } finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, [range]);
 
-  const uniqueUsers = users.length;
-  const latestDaily = daily.at(-1)?.users ?? 0;
+  const active = users.filter((u) => u.status === 'Active').length;
+  const inactive = users.length - active;
+  const adoption = users.length ? Math.round(active / users.length * 100) : 0;
   const totalLogins = users.reduce((sum, u) => sum + u.logins, 0);
-  const topUsers = useMemo(() => users.slice(0, 100), [users]);
+  const displayedUsers = useMemo(() => selectedMz ? users.filter((u) => u.assignments.some((a) => a.mz === selectedMz)) : [], [users, selectedMz]);
+  const selectedZone = zones.find((z) => z.mz === selectedMz);
+
+  const openUser = async (user: UserActivity) => {
+    setSelectedUser(user);
+    try { setDaily(await fetchUserDailyActivity(user.userId, range)); } catch { setDaily([]); }
+  };
 
   return <main className="shell">
     <header className="header">
-      <div><div className="eyebrow">AXIS BANK · DYNATRACE APPENGINE</div><h1>Dynatrace User Adoption</h1><p>Live login engagement and adoption analytics.</p></div>
+      <div><div className="eyebrow">AXIS BANK · DYNATRACE APPENGINE</div><h1>Dynatrace User Adoption</h1><p>Management Zone and application adoption based on the maintained user population and live Dynatrace login activity.</p></div>
       <div className="toolbar"><div className="ranges">{[7, 15, 30].map((d) => <button className={range === d ? 'selected' : ''} key={d} onClick={() => setRange(d as Range)}>{d} Days</button>)}</div><button className="refresh" onClick={() => void load()}><RefreshCw size={16} className={loading ? 'spin' : ''}/></button></div>
     </header>
-    <div className="status"><span><i/> {loading ? 'Querying Grail…' : 'Live Dynatrace data'}</span><span><CalendarDays size={13}/> Last {range} days</span><span>{totalLogins.toLocaleString()} login events</span></div>
-    {error && <div className="error"><b>Live data unavailable</b><span>{error}</span></div>}
-    {diagnostic && !error && <div className="diagnostic"><b>Data diagnostic</b><span>{diagnostic}</span></div>}
+    <div className="status"><span><i/> {loading ? 'Querying Grail…' : 'Live Dynatrace data'}</span><span><CalendarDays size={13}/> Last {range} days</span><span>{refCount.toLocaleString()} reference users</span></div>
+    {error && <div className="error"><b>Data unavailable</b><span>{error}</span></div>}
 
     <section className="cards">
-      <Card icon={<Users/>} label="Unique Active Users" value={uniqueUsers} hint="Users with LOGIN activity"/>
-      <Card icon={<UserCheck/>} label="Login Events" value={totalLogins} hint={`Successful LOGIN records in ${range} days`}/>
-      <Card icon={<UserX/>} label="Inactive Users" value="—" hint="Requires full IAM user population"/>
-      <Card icon={<Activity/>} label="Latest Daily Active" value={latestDaily} hint="Unique users on latest activity day"/>
+      <Card icon={<Users/>} label="Reference Users" value={refCount} hint="Unique users in supplied MZ base"/>
+      <Card icon={<UserCheck/>} label="Active Users" value={active} hint={`At least one LOGIN in ${range} days`}/>
+      <Card icon={<UserX/>} label="Inactive Users" value={inactive} hint="Reference users with no LOGIN"/>
+      <Card icon={<Activity/>} label="Adoption Rate" value={`${adoption}%`} hint={`${totalLogins.toLocaleString()} aggregated login events`}/>
     </section>
 
-    <section className="grid">
-      <div className="panel"><div className="panelHead"><div><h2>Daily Active Users</h2><p>Unique users with a LOGIN audit event per day.</p></div><span>{daily.length} active days</span></div><div className="chart">{daily.map((d) => <div className="bar" key={d.date} title={`${d.date}: ${d.users}`}><b style={{height:`${Math.max(8, latestDaily ? d.users/latestDaily*100 : 8)}%`}}/><small>{d.date.slice(5)}</small></div>)}{!daily.length && <div className="empty">No daily login activity returned.</div>}</div></div>
-      <div className="panel"><div className="panelHead"><div><h2>Activity Health</h2><p>Phase 1 live audit activity</p></div></div><div className="health"><div className="ring"><b>{uniqueUsers}</b><span>USERS</span></div><div><strong>{uniqueUsers}</strong><small>unique users</small><strong>{totalLogins}</strong><small>login events</small></div></div><div className="callout"><ShieldCheck size={15}/><span>Grail audit provider connected. IAM population and Management Zone enrichment are next.</span></div></div>
+    <section className="panel"><div className="panelHead"><div><h2>Management Zone Adoption</h2><p>Users are assigned to MZ/application relationships from the supplied reference base; login activity comes from Grail.</p></div><span>{zones.length} MZs</span></div>
+      <div className="mzTable"><div className="thead"><span>MANAGEMENT ZONE</span><span>APPLICATION</span><span>USERS</span><span>ACTIVE</span><span>INACTIVE</span><span>ADOPTION</span><span/></div>
+        {zones.map((z) => <button className={`mzRow ${selectedMz === z.mz ? 'selected' : ''}`} key={z.mz} onClick={() => setSelectedMz(selectedMz === z.mz ? null : z.mz)}><strong>{z.mz}</strong><span>{z.apps.join(', ')}</span><span>{z.total}</span><span>{z.active}</span><span>{z.inactive}</span><span><b>{z.adoption}%</b><i><em style={{width:`${z.adoption}%`}}/></i></span><ChevronRight size={15}/></button>)}
+        {!zones.length && !loading && <div className="empty">No MZ assignments found.</div>}
+      </div>
     </section>
 
-    <section className="panel"><div className="panelHead"><div><h2>User Activity</h2><p>Real audit/login records. Management Zone enrichment is Phase 2.</p></div><span>{topUsers.length} users</span></div><div className="table"><div className="thead"><span>USER</span><span>MANAGEMENT ZONE</span><span>LAST LOGIN</span><span>ACTIVE DAYS</span><span>LOGINS</span><span>STATUS</span></div>{topUsers.map((u) => <div className="tr" key={u.userId}><strong>{u.userName}</strong><span>{u.managementZone}</span><span>{u.lastLogin || '—'}</span><span>{u.activeDays}</span><span>{u.logins}</span><em>Active in window</em></div>)}{!loading && !topUsers.length && <div className="empty">No users returned.</div>}</div></section>
-    <footer>Dynatrace User Adoption · Phase 1 · Standalone AppEngine application</footer>
+    {selectedMz && <section className="panel detailPanel"><div className="panelHead"><div><h2>{selectedMz}</h2><p>{selectedZone?.apps.join(', ')} · {displayedUsers.length} assigned users</p></div><button className="close" onClick={() => setSelectedMz(null)}><X size={15}/></button></div>
+      <div className="table"><div className="thead"><span>USER</span><span>LAST LOGIN</span><span>ACTIVE DAYS</span><span>LOGINS</span><span>STATUS</span><span/></div>
+        {displayedUsers.slice(0, 1000).map((u) => <button className="tr userRow" key={`${selectedMz}-${u.userId}`} onClick={() => void openUser(u)}><strong>{u.userName}</strong><span>{u.lastLogin || '—'}</span><span>{u.activeDays}</span><span>{u.logins}</span><em className={u.status.toLowerCase()}>{u.status}</em><ChevronRight size={14}/></button>)}
+      </div>
+    </section>}
+
+    {selectedUser && <section className="panel userDetail"><div className="panelHead"><div><h2>{selectedUser.userName}</h2><p>{selectedUser.userId} · {selectedUser.assignments.map((a) => a.mz).join(', ')}</p></div><button className="close" onClick={() => setSelectedUser(null)}><X size={15}/></button></div><div className="userStats"><b>{selectedUser.status}</b><span>{selectedUser.activeDays} active days</span><span>{selectedUser.logins} login events</span><span>Last login: {selectedUser.lastLogin || '—'}</span></div><div className="timeline">{daily.map((d) => <div key={d.day} className="day"><i className={d.logins ? 'hit' : ''}/><span>{d.day.slice(0,10)}</span><b>{d.logins ? `${d.logins} login${d.logins > 1 ? 's' : ''}` : 'No login'}</b></div>)}{!daily.length && <div className="empty">No daily activity for this user.</div>}</div></section>}
+
+    <div className="callout"><ShieldCheck size={15}/><span>Reference population is privacy-safe SHA-256 user mapping. Raw LDAP/user data is not stored in the repository.</span></div>
+    <footer>Dynatrace User Adoption · MZ-aware adoption engine · Aggregated Grail queries</footer>
   </main>;
 }
 
